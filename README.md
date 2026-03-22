@@ -8,7 +8,7 @@ Local-first **Retrieval-Augmented Generation (RAG)** app: upload PDFs, chunk & e
 
 - PDF ingestion (large documents supported) with token/chunk metrics
 - Text extraction with **OCR fallback** (Tesseract) on low-text pages
-- Sentence-transformers embeddings (default: `BAAI/bge-small-en-v1.5`) — cached under `backend/data/models` (not in Git)
+- Sentence-transformers embeddings (default: `BAAI/bge-small-en-v1.5`) — cached under `backend/data/models` after first run
 - Persistent Chroma vector store under `backend/data/chroma`
 - FastAPI backend + modern chat UI
 - “Upload to RAG” (indexed) vs “Upload to Model” (direct context) flows
@@ -28,17 +28,6 @@ Local-first **Retrieval-Augmented Generation (RAG)** app: upload PDFs, chunk & e
 3. **Git**
 4. **Tesseract OCR** (optional but recommended for scanned/image-heavy PDFs)  
    - Windows: install [Tesseract](https://github.com/UB-Mannheim/tesseract/wiki) and ensure `tesseract` is on `PATH`.
-
-## What gets committed vs stays local
-
-| Committed to GitHub | **Not** committed (see `.gitignore`) |
-|---------------------|----------------------------------------|
-| Source code, `requirements.txt`, `package.json` / lockfile | `.env` / `backend/.env` (**API keys**) |
-| `.env.example` (no secrets) | `backend/data/models/` (**embedding weights**) |
-| Docs | `backend/data/uploads/`, `backend/data/chroma/`, `backend/data/model_uploads/` (local data) |
-| | `node_modules/`, `frontend/dist/`, virtualenvs |
-
-Clone the repo, then copy env and let the app download models on first run.
 
 ---
 
@@ -89,7 +78,7 @@ copy .env.example backend\.env
 cp .env.example backend/.env
 ```
 
-Edit **`backend/.env`** (this file is gitignored). Minimum:
+Edit **`backend/.env`**. Minimum:
 
 ```env
 GROQ_API_KEY=your_key_here
@@ -150,7 +139,7 @@ cd frontend
 npm run build
 ```
 
-Static output is in `frontend/dist/` (ignored by Git).
+Static output is in `frontend/dist/`.
 
 ---
 
@@ -204,9 +193,3 @@ For typical **CPU-only** setups, **`BAAI/bge-small-en-v1.5`** (default) is a goo
 | CORS | Backend is configured for local dev; use same machine/ports as in docs |
 | Slow first query | First run downloads embedding model to `backend/data/models/` |
 | OCR errors | Install Tesseract and `PATH` |
-
----
-
-## License
-
-Add a license file if you plan to open-source formally (e.g. MIT).
