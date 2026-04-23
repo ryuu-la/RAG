@@ -98,9 +98,10 @@ def restore_documents_from_chroma() -> dict[str, dict[str, Any]]:
     collection = get_collection()
     raw = collection.get(include=["documents", "metadatas"])
     ids = raw.get("ids", [])
+    docs = raw.get("documents", [])
     metas = raw.get("metadatas", [])
     docs_map: dict[str, dict[str, Any]] = {}
-    for chunk_id, meta in zip(ids, metas):
+    for chunk_id, text, meta in zip(ids, docs, metas):
         if not meta:
             continue
         doc_id = meta.get("doc_id", "")
@@ -122,6 +123,7 @@ def restore_documents_from_chroma() -> dict[str, dict[str, Any]]:
         entry = docs_map[doc_id]
         entry["chunk_count"] += 1
         entry["indexed_chunk_count"] += 1
+        entry["estimated_tokens"] += max(1, int(len(text or "") / 4))
         page = meta.get("page", 0)
         if page:
             entry["_pages"].add(page)

@@ -13,7 +13,13 @@ groq
 pytesseract
 pypdfium2
 Pillow
-numpy<2
-packaging<26
-protobuf<6
+numpy
+packaging
+protobuf
 httpx
+langchain-core
+langchain-groq
+langchain-google-genai
+duckduckgo-search
+pandas
+fpdf2

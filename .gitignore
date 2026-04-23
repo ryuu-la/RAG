@@ -10,6 +10,8 @@ data/models/
 backend/data/uploads/
 backend/data/chroma/
 backend/data/model_uploads/
+backend/data/exports/
+data/exports/
 
 # --- Python ---
 __pycache__/

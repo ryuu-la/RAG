@@ -1,10 +1,13 @@
 from __future__ import annotations
+
 import time
 import uuid
 import threading
+from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, StreamingResponse
 
 from app.config import settings
 from app.models import (
@@ -20,10 +23,16 @@ from app.models import (
 from app.services.ingest import create_ingest_job, ensure_dirs, process_pdf
 from app.services.llm import generate_answer
 from app.services.model_upload import build_model_upload_context, save_model_upload
-from app.services.retrieval import delete_document_chunks, hybrid_search, rebuild_bm25_index, restore_documents_from_chroma
+from app.services.retrieval import (
+    delete_document_chunks,
+    hybrid_search,
+    rebuild_bm25_index,
+    restore_documents_from_chroma,
+)
+from app.services.agent import run_agent_stream
 from app.store import store
 
-app = FastAPI(title="RAG Backend", version="0.2.0")
+app = FastAPI(title="RAG Backend", version="0.3.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,6 +46,7 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup() -> None:
     ensure_dirs()
+    settings.export_path.mkdir(parents=True, exist_ok=True)
     restored = restore_documents_from_chroma()
     for doc_id, doc_meta in restored.items():
         if doc_id not in store.documents:
@@ -47,6 +57,9 @@ def on_startup() -> None:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+# ── Ingest ──
 
 
 @app.post("/api/ingest/upload")
@@ -83,6 +96,9 @@ def ingest_status(job_id: str) -> IngestStatusResponse:
     )
 
 
+# ── Sources / Documents ──
+
+
 @app.get("/api/sources", response_model=list[SourceInfo])
 def list_sources() -> list[SourceInfo]:
     return [
@@ -107,6 +123,9 @@ def delete_document(doc_id: str) -> dict[str, str | int]:
     return {"doc_id": doc_id, "deleted_chunks": deleted_chunks}
 
 
+# ── Model uploads ──
+
+
 @app.post("/api/model/upload")
 async def model_upload(file: UploadFile = File(...)) -> dict[str, str | int]:
     allowed = (".pdf", ".txt", ".md")
@@ -128,12 +147,18 @@ def list_model_uploads() -> list[ModelUploadInfo]:
     ]
 
 
+# ── Metrics ──
+
+
 @app.get("/api/metrics/document/{doc_id}", response_model=DocumentMetricsResponse)
 def document_metrics(doc_id: str) -> DocumentMetricsResponse:
     doc = store.documents.get(doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     return DocumentMetricsResponse(**doc)
+
+
+# ── Query (legacy, non-streaming) ──
 
 
 @app.post("/api/query", response_model=QueryResponse)
@@ -167,6 +192,48 @@ def query(payload: QueryRequest) -> QueryResponse:
     ]
     latency_ms = int((time.perf_counter() - start) * 1000)
     return QueryResponse(query_id=query_id, answer=answer, citations=citations, latency_ms=latency_ms)
+
+
+# ── Query (SSE streaming agent) ──
+
+
+@app.post("/api/query/stream")
+async def query_stream(payload: QueryRequest):
+    model_file_context = build_model_upload_context(payload.model_upload_ids)
+
+    async def event_gen():
+        async for event in run_agent_stream(
+            question=payload.question,
+            rag_mode=payload.rag_mode,
+            model_name=payload.selected_model,
+            extra_context=model_file_context,
+        ):
+            yield event
+
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ── Exports download ──
+
+
+@app.get("/api/exports/{filename}")
+def download_export(filename: str):
+    safe_name = Path(filename).name
+    path = settings.export_path / safe_name
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Export file not found")
+    return FileResponse(str(path), filename=safe_name)
+
+
+# ── Query metrics ──
 
 
 @app.get("/api/metrics/query/{query_id}", response_model=QueryMetricsResponse)

@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-120b"
+    google_api_key: str = ""
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     top_k: int = 6
     chunk_size: int = 1400
@@ -45,6 +46,10 @@ class Settings(BaseSettings):
     @property
     def model_cache_path(self) -> Path:
         return Path(self.model_cache_dir)
+
+    @property
+    def export_path(self) -> Path:
+        return self.data_path / "exports"
 
 
 settings = Settings()

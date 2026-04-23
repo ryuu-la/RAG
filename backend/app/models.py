@@ -18,6 +18,7 @@ class QueryRequest(BaseModel):
     top_k: int | None = None
     selected_model: str | None = None
     model_upload_ids: list[str] | None = None
+    rag_mode: bool = True
 
 
 class Citation(BaseModel):
