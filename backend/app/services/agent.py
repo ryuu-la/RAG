@@ -7,19 +7,21 @@ from datetime import datetime
 from typing import Any, AsyncGenerator
 
 from langchain_core.messages import (
+    AIMessage,
     HumanMessage,
     SystemMessage,
     ToolMessage,
 )
-from langchain_groq import ChatGroq
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.config import settings
 from app.services.tools import get_tools
 
 MAX_ITERATIONS = 10
 
-GOOGLE_MODELS = {"gemma-4-31b-it"}
+AVAILABLE_MODELS = [
+    {"id": "gemma-4-31b-it", "label": "Gemma 4 31B", "provider": "google"},
+    {"id": "gemini-3.1-flash-lite-preview", "label": "Gemini 3.1 Flash Lite", "provider": "google", "grounding": True},
+]
 
 
 def _date_preamble() -> str:
@@ -163,28 +165,57 @@ Llama 4,Open Source,91.0,2026,"Free, open weights"
 RAG_SYSTEM_TEMPLATE = """\
 You are RAG Studio, an advanced agentic AI assistant with tool access.
 
-## CRITICAL RULE — DOCUMENT-FIRST POLICY
-You MUST ALWAYS call search_documents FIRST before doing anything else.
-NEVER call web_search before you have searched the indexed documents.
-The user uploaded documents specifically for you to answer from — use them.
-Only use web_search if search_documents returned nothing relevant, or if the user explicitly asks for web/internet information.
+## DYNAMIC SEARCH POLICY (CRITICAL - FOLLOW EXACTLY)
+
+You MUST decide which search tool to use based on the user's query:
+
+### USE `search_documents` (Index/RAG Search) ONLY WHEN:
+The user's query contains ANY of these explicit keywords or phrases:
+- "index", "from index", "indexed", "from my index"
+- "document", "documents", "my documents", "uploaded"
+- "my files", "my PDF", "the PDF", "the report"
+- "RAG", "search my files", "in my documents"
+- Any reference to a specific uploaded filename
+
+Examples that trigger index search:
+- "search about langchain from index" -> use search_documents
+- "what does my document say about X" -> use search_documents
+- "find in my uploaded files" -> use search_documents
+
+### USE `web_search` (DuckDuckGo) FOR EVERYTHING ELSE (DEFAULT):
+If the user does NOT mention index, documents, uploaded files, or RAG,
+ALWAYS default to `web_search` for live internet results.
+
+Examples that trigger web search:
+- "what is langchain" -> use web_search
+- "latest AI news" -> use web_search
+- "explain transformers" -> use web_search
+- "search about langchain" (no mention of index) -> use web_search
+
+### FALLBACK:
+If `search_documents` returns nothing on a document-specific query,
+fallback to `web_search` if the context allows.
 
 """ + TOOL_SKILLS + """
 
 ## AGENTIC BEHAVIOR
 
-1. ALWAYS call search_documents FIRST. This is your primary knowledge source.
-2. THINK step by step. Plan what tools you need after searching documents.
-3. Only use web_search if documents don't have the answer OR user asks for current/live info.
-4. GATHER enough information. Do MULTIPLE document searches with different queries if needed.
-5. SYNTHESIZE a thorough, well-structured answer with citations from documents.
-6. When exporting files, write COMPLETE, professionally formatted content.
-7. If a tool returns an error or empty results, try a DIFFERENT approach/query.
+1. Decide between `web_search` (default) and `search_documents` (only when explicitly requested) based on the Dynamic Search Policy above.
+2. THINK step by step. Plan what tools you need.
+3. GATHER enough information. Do MULTIPLE searches with different queries if needed.
+4. SYNTHESIZE a thorough, well-structured answer with citations.
+5. When exporting files, write COMPLETE, professionally formatted content.
+6. If a tool returns an error or empty results, try a DIFFERENT approach/query.
+
+## CITATION & SOURCE RULES
+- When you used `web_search` or `read_url`: cite the actual WEBSITE URLs you visited. These are the real sources.
+- When you used `search_documents`: cite as [filename, page X] from the indexed documents.
+- NEVER cite PDF filenames when you only did a web search. Only cite the web URLs.
+- NEVER cite web URLs when you only searched the index. Only cite document sources.
 
 ## RESPONSE FORMAT
 
 - Use **bold** for emphasis.
-- Cite document sources as [filename, page X].
 - Include download links naturally when you create export files.
 - NEVER paste raw CSV data or code blocks in your response. ALWAYS use the export_csv tool to create a downloadable file.
 - NEVER paste raw table data as text. Use export_csv for tabular data and export_pdf for reports.
@@ -237,23 +268,20 @@ def _text(content: Any) -> str:
 
 
 def _build_llm(model_id: str):
-    """Return the right LangChain chat model based on model_id."""
-    if model_id in GOOGLE_MODELS:
-        if not settings.google_api_key.strip():
-            raise ValueError("GOOGLE_API_KEY not configured in .env")
-        return ChatGoogleGenerativeAI(
-            model=model_id,
-            google_api_key=settings.google_api_key,
-            temperature=0.15,
-            max_output_tokens=8192,
-        )
-    if not settings.groq_api_key.strip():
-        raise ValueError("GROQ_API_KEY not configured in .env")
-    return ChatGroq(
+    """Return a LangChain chat model for the given Google model_id."""
+    if not settings.google_api_key.strip():
+        raise ValueError("GOOGLE_API_KEY not configured in .env")
+    try:
+        from langchain_google_genai import ChatGoogleGenerativeAI
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(
+            "langchain_google_genai is not installed. Install it to use Google models."
+        ) from exc
+    return ChatGoogleGenerativeAI(
         model=model_id,
-        api_key=settings.groq_api_key,
+        google_api_key=settings.google_api_key,
         temperature=0.15,
-        max_tokens=8192,
+        max_output_tokens=8192,
     )
 
 
@@ -262,9 +290,10 @@ async def run_agent_stream(
     rag_mode: bool = True,
     model_name: str | None = None,
     extra_context: str = "",
+    history: list[dict] | None = None,
 ) -> AsyncGenerator[str, None]:
     t0 = time.perf_counter()
-    model_id = model_name or settings.groq_model
+    model_id = model_name or settings.default_model
 
     try:
         llm = _build_llm(model_id)
@@ -279,12 +308,29 @@ async def run_agent_stream(
     if extra_context:
         sys_text += f"\n\nDirect-upload file context:\n{extra_context}"
 
-    messages: list = [
-        SystemMessage(content=sys_text),
-        HumanMessage(content=question),
-    ]
-    citations: list[dict] = []
+    messages: list = [SystemMessage(content=sys_text)]
+
+    # Inject conversation history for multi-turn context
+    if history:
+        for msg in history:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            if not content:
+                continue
+            if role == "user":
+                messages.append(HumanMessage(content=content))
+            elif role == "assistant":
+                messages.append(AIMessage(content=content))
+
+    messages.append(HumanMessage(content=question))
+    web_citations: list[dict] = []
+    doc_citations: list[dict] = []
+    # Use a set to prevent duplicate citations
+    seen_sources = set()
     export_links: list[dict] = []
+    # Track which search tools were actually used
+    used_web_search = False
+    used_search_documents = False
 
     llm_with_tools = None
     if tools:
@@ -343,14 +389,46 @@ async def run_agent_stream(
                 result = f"Tool error: {exc}"
 
             if name == "search_documents":
+                used_search_documents = True
                 for m in re.finditer(
                     r"\[(\d+)\]\s+(\S+)\s+\(page\s+(\d+)\)", str(result)
                 ):
-                    citations.append({
-                        "source": m.group(2),
-                        "page": int(m.group(3)),
-                        "chunk_id": "",
-                    })
+                    src = m.group(2)
+                    pg = m.group(3)
+                    if (src, pg) not in seen_sources:
+                        seen_sources.add((src, pg))
+                        doc_citations.append({
+                            "source": src,
+                            "page": int(pg),
+                            "chunk_id": "",
+                        })
+                    
+            if name == "web_search":
+                used_web_search = True
+                for m in re.finditer(r"URL: (https?://[^\s\n]+)", str(result)):
+                    url = m.group(1)
+                    if url not in seen_sources:
+                        seen_sources.add(url)
+                        web_citations.append({
+                            "source": url,
+                            "page": None,
+                            "chunk_id": "",
+                        })
+
+            if name == "read_url":
+                used_web_search = True
+                try:
+                    url = args.get("url", "")
+                    if url and isinstance(url, str) and url.startswith("http"):
+                        if url not in seen_sources:
+                            seen_sources.add(url)
+                            web_citations.append({
+                                "source": url,
+                                "page": None,
+                                "chunk_id": "",
+                            })
+                except Exception:
+                    pass
 
             if name in ("export_pdf", "export_csv"):
                 for m in re.finditer(r"\[([^\]]+)\]\((/api/exports/[^)]+)\)", str(result)):
@@ -382,7 +460,17 @@ async def run_agent_stream(
     if export_links:
         yield _sse("exports", export_links)
 
+    # Build final citations based on which tools were actually used
+    # If only web_search was used -> only show web URLs (not PDF names)
+    # If only search_documents was used -> only show document sources
+    # If both were used -> show all
+    final_citations: list[dict] = []
+    if used_web_search:
+        final_citations.extend(web_citations)
+    if used_search_documents:
+        final_citations.extend(doc_citations)
+
     yield _sse("done", {
         "latency_ms": int((time.perf_counter() - t0) * 1000),
-        "citations": citations,
+        "citations": final_citations,
     })

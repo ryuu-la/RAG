@@ -55,6 +55,11 @@ export async function getModelUploads() {
   return parseJson(res);
 }
 
+export async function getModels() {
+  const res = await fetch(`${API_BASE}/api/models`);
+  return parseJson(res);
+}
+
 export async function getQueryMetrics(queryId) {
   const res = await fetch(`${API_BASE}/api/metrics/query/${queryId}`);
   return parseJson(res);
@@ -65,7 +70,7 @@ export function getExportUrl(path) {
   return `${API_BASE}/${path}`;
 }
 
-export async function streamQuery(payload, { onStep, onToken, onDone, onError }) {
+export async function streamQuery(payload, { onStep, onToken, onExports, onDone, onError }) {
   const res = await fetch(`${API_BASE}/api/query/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

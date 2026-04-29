@@ -21,7 +21,7 @@ def _export_dir() -> Path:
 
 @tool
 def search_documents(query: str) -> str:
-    """Search indexed RAG documents for chunks matching the query. Use this to find information from uploaded PDFs."""
+    """Search indexed user-uploaded RAG documents. ONLY use this when the user EXPLICITLY asks to search their uploaded files or documents."""
     chunks = hybrid_search(query, top_k=settings.top_k)
     if not chunks:
         return "No relevant documents found in the index."
@@ -59,7 +59,7 @@ def web_search(query: str) -> str:
     try:
         from ddgs import DDGS
 
-        results = DDGS().text(query, max_results=5)
+        results = DDGS().text(query, max_results=10)
         if not results:
             return "No web results found. Try different keywords or answer from your knowledge."
         return "\n\n".join(
@@ -361,7 +361,33 @@ def export_pdf(title: str, content: str) -> str:
         return f"PDF export failed: {e}"
 
 
+@tool
+def read_url(url: str) -> str:
+    """Read the content of a specific webpage or URL. Use this when the user gives you a direct link or if you need to read a full article after searching."""
+    try:
+        import urllib.request
+        from bs4 import BeautifulSoup
+        
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            html = response.read().decode('utf-8')
+            soup = BeautifulSoup(html, "html.parser")
+            # Remove scripts and styles
+            for script in soup(["script", "style"]):
+                script.extract()
+            text = soup.get_text(separator=' ')
+            # Collapse whitespace
+            lines = (line.strip() for line in text.splitlines())
+            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+            text = '\n'.join(chunk for chunk in chunks if chunk)
+            
+            # Truncate if too long (e.g., 20000 chars)
+            return f"--- Content from {url} ---\n\n" + text[:20000]
+    except Exception as e:
+        return f"Failed to read URL {url}: {e}"
+
 def get_tools(rag_mode: bool) -> list:
     if rag_mode:
-        return [search_documents, lookup_document, web_search, export_csv, export_pdf]
-    return [web_search, export_csv, export_pdf]
+        # Re-order so web_search is first and clearly prioritized
+        return [web_search, read_url, search_documents, lookup_document, export_csv, export_pdf]
+    return [web_search, read_url, export_csv, export_pdf]

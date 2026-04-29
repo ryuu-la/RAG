@@ -29,7 +29,7 @@ from app.services.retrieval import (
     rebuild_bm25_index,
     restore_documents_from_chroma,
 )
-from app.services.agent import run_agent_stream
+from app.services.agent import run_agent_stream, AVAILABLE_MODELS
 from app.store import store
 
 app = FastAPI(title="RAG Backend", version="0.3.0")
@@ -57,6 +57,11 @@ def on_startup() -> None:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/models")
+def list_models() -> list[dict]:
+    return AVAILABLE_MODELS
 
 
 # ── Ingest ──
@@ -202,11 +207,16 @@ async def query_stream(payload: QueryRequest):
     model_file_context = build_model_upload_context(payload.model_upload_ids)
 
     async def event_gen():
+        history_dicts = None
+        if payload.history:
+            history_dicts = [{"role": m.role, "content": m.content} for m in payload.history]
+
         async for event in run_agent_stream(
             question=payload.question,
             rag_mode=payload.rag_mode,
             model_name=payload.selected_model,
             extra_context=model_file_context,
+            history=history_dicts,
         ):
             yield event
 

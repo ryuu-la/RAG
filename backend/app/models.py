@@ -13,12 +13,18 @@ class IngestStatusResponse(BaseModel):
     progress: int = 0
 
 
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
 class QueryRequest(BaseModel):
     question: str = Field(min_length=1)
     top_k: int | None = None
     selected_model: str | None = None
     model_upload_ids: list[str] | None = None
     rag_mode: bool = True
+    history: list[ChatMessage] | None = None
 
 
 class Citation(BaseModel):

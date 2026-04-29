@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from groq import Groq
+from google import genai
+from google.genai import types
 
 from app.config import settings
 
@@ -44,9 +45,9 @@ def generate_answer(
     context = trim_to_token_budget(context, settings.max_context_tokens)
     context_tokens = estimate_tokens(context)
 
-    if not settings.groq_api_key.strip():
+    if not settings.google_api_key.strip():
         return (
-            "Groq API key is not configured. Add GROQ_API_KEY in .env to enable answer generation.",
+            "Google API key is not configured. Add GOOGLE_API_KEY in .env to enable answer generation.",
             None,
             context_tokens,
         )
@@ -64,25 +65,23 @@ def generate_answer(
     user_prompt = f"Question:\n{question}\n\nContext:\n{context}"
 
     try:
-        client = Groq(api_key=settings.groq_api_key)
-        completion = client.chat.completions.create(
-            model=model_override or settings.groq_model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.15,
-            max_completion_tokens=8192,
-            top_p=1,
-            stream=True,
-            stop=None,
+        client = genai.Client(api_key=settings.google_api_key)
+        model_name = model_override or settings.default_model
+
+        response = client.models.generate_content_stream(
+            model=model_name,
+            contents=user_prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                temperature=0.15,
+                max_output_tokens=8192,
+            ),
         )
 
         answer_parts: list[str] = []
-        for chunk in completion:
-            delta = chunk.choices[0].delta
-            if delta.content:
-                answer_parts.append(delta.content)
+        for chunk in response:
+            if chunk.text:
+                answer_parts.append(chunk.text)
 
         answer = "".join(answer_parts).strip()
         response_tokens = estimate_tokens(answer)
@@ -90,14 +89,14 @@ def generate_answer(
 
     except Exception as exc:  # noqa: BLE001
         err_msg = str(exc)
-        if "rate_limit" in err_msg.lower() or "429" in err_msg:
+        if "rate_limit" in err_msg.lower() or "429" in err_msg or "quota" in err_msg.lower():
             return (
-                "Groq rate limit reached. Please retry after a short wait or choose another model.",
+                "Google API rate limit reached. Please retry after a short wait.",
                 None,
                 context_tokens,
             )
         return (
-            f"Groq request failed: {err_msg}",
+            f"Google API request failed: {err_msg}",
             None,
             context_tokens,
         )

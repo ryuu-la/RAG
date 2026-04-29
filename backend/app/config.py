@@ -14,9 +14,8 @@ class Settings(BaseSettings):
         env_ignore_empty=True,
     )
 
-    groq_api_key: str = ""
-    groq_model: str = "openai/gpt-oss-120b"
     google_api_key: str = ""
+    default_model: str = "gemma-4-31b-it"
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     top_k: int = 6
     chunk_size: int = 1400
