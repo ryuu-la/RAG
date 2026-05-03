@@ -21,6 +21,7 @@ MAX_ITERATIONS = 10
 AVAILABLE_MODELS = [
     {"id": "gemma-4-31b-it", "label": "Gemma 4 31B", "provider": "google"},
     {"id": "gemini-3.1-flash-lite-preview", "label": "Gemini 3.1 Flash Lite", "provider": "google", "grounding": True},
+    {"id": "openai/gpt-oss-120b:free", "label": "GPT OSS 120B (Free)", "provider": "openrouter"},
 ]
 
 
@@ -43,14 +44,34 @@ Strategy:
 - Use specific keywords, then broaden if results are thin.
 - Cite results as [source_name, page X].
 
-### SKILL: web_search(query)
+### SKILL: web_search(query, timelimit="d"|"w"|"m"|"y"|None)
 Purpose: Live internet search via DuckDuckGo.
 When to use: Current events, news, facts NOT in documents.
 Strategy:
+- Use `timelimit="d"` or `"w"` if the user explicitly asks for the "latest", "recent", "today", or live scores/news.
 - Keep queries SHORT: 3-6 words work best.
-- Call MULTIPLE TIMES with varied wording to get broad coverage.
-- Try different angles: "AI news 2026", "latest AI models", "AI breakthroughs March".
-- If one query returns nothing, rephrase and try again.
+- For most simple questions or live data, search ONCE and answer immediately based on the snippet. Do not search multiple sites unnecessarily.
+- Only call multiple times if the first search returns absolutely no useful information or if the user asks for a deep dive.
+- CRITICAL FOR LIVE DATA: Search snippets often omit specific live numbers (like sports scores, stock prices). If the snippet doesn't contain the exact answer, use `read_url` on the most promising URL from the search results to extract the live data.
+
+### SKILL: read_url(url)
+Purpose: Read the full text content of a specific webpage.
+When to use: 
+- When the user provides a direct link to read.
+- After using `web_search`, if the search snippet doesn't contain the specific data you need, use this to read the full article from the search results.
+
+### SKILL: image_search(query, max_results=4)
+Purpose: Fetch images from the internet to display in the chat UI.
+When to use: 
+- When the user explicitly asks for pictures, images, or screenshots.
+- When visually describing something (e.g., plants, UI designs, places) where an image adds massive value.
+Strategy:
+- Keep queries simple (e.g., "red hibiscus flower", "modern UI dashboard").
+- The tool returns markdown images. YOU MUST include these markdown images in your final response to the user so they can see them!
+
+### SKILL: get_live_sports_scores()
+Purpose: Get real-time, second-by-second live cricket/IPL scores.
+When to use: ALWAYS use this FIRST when the user asks for the score of a currently ongoing IPL or cricket match. Do not use web_search for cricket scores.
 
 ### SKILL: lookup_document(document_name)
 Purpose: Get metadata about an indexed document.
@@ -209,7 +230,7 @@ fallback to `web_search` if the context allows.
 
 ## CITATION & SOURCE RULES
 - When you used `web_search` or `read_url`: cite the actual WEBSITE URLs you visited. These are the real sources.
-- When you used `search_documents`: cite as [filename, page X] from the indexed documents.
+- When you used `search_documents`: ALWAYS use simple numeric citations mapped to the search results, formatted exactly like [1] or [2]. NEVER output raw long filenames like [f5116..._langchain.pdf] in your text.
 - NEVER cite PDF filenames when you only did a web search. Only cite the web URLs.
 - NEVER cite web URLs when you only searched the index. Only cite document sources.
 
@@ -268,14 +289,40 @@ def _text(content: Any) -> str:
 
 
 def _build_llm(model_id: str):
-    """Return a LangChain chat model for the given Google model_id."""
-    if not settings.google_api_key.strip():
-        raise ValueError("GOOGLE_API_KEY not configured in .env")
+    """Return a LangChain chat model for the given model_id."""
+    if model_id.startswith("openai/"):
+        if not settings.openrouter_api_key:
+            raise ValueError(
+                "OPENROUTER_API_KEY is not set. "
+                "Add it to your .env file to use OpenRouter models."
+            )
+        try:
+            from langchain_openai import ChatOpenAI
+        except ImportError as exc:
+            raise ValueError(
+                "Missing dependency: langchain-openai. "
+                "Run: pip install langchain-openai"
+            ) from exc
+        return ChatOpenAI(
+            model=model_id,
+            api_key=settings.openrouter_api_key,
+            base_url="https://openrouter.ai/api/v1",
+            temperature=0.15,
+            max_tokens=8192,
+        )
+
+    if not settings.has_api_key:
+        raise ValueError(
+            "GOOGLE_API_KEY is not set. "
+            "Add it to your .env file (in backend/ or project root). "
+            "Get a free key at https://aistudio.google.com/apikey"
+        )
     try:
         from langchain_google_genai import ChatGoogleGenerativeAI
-    except Exception as exc:  # noqa: BLE001
+    except ImportError as exc:
         raise ValueError(
-            "langchain_google_genai is not installed. Install it to use Google models."
+            "Missing dependency: langchain-google-genai. "
+            "Run: pip install langchain-google-genai"
         ) from exc
     return ChatGoogleGenerativeAI(
         model=model_id,

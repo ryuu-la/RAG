@@ -89,19 +89,17 @@ pip install -r requirements.txt
 
 ### 3. Environment Variables
 
-Copy the example env and add your **Google API key**:
-
-**Windows (from `RAG/`):**
-
-```powershell
-copy .env.example backend\.env
-```
-
-**macOS / Linux (from `RAG/`):**
+Copy the example env and add your **Google API key** ([get one free here](https://aistudio.google.com/apikey)):
 
 ```bash
+# Option A: Place .env at project root (recommended)
+cp .env.example .env
+
+# Option B: Place .env inside backend/
 cp .env.example backend/.env
 ```
+
+> **Both locations work!** The backend checks `backend/.env` first, then falls back to `RAG/.env`.
 
 Edit **`backend/.env`**. Minimum required:
 
@@ -123,38 +121,41 @@ npm install
 
 ## How to Run
 
-Use **two terminals**: one for the API, one for the UI.
+### Option 1: VS Code Task (Recommended)
+If you are using Visual Studio Code, you can start both the frontend and backend servers simultaneously with a single shortcut:
+- Press **`Ctrl + Shift + B`** (Windows/Linux) or **`Cmd + Shift + B`** (Mac).
+This will open a split terminal and run both servers automatically.
 
-### Terminal A — Backend
+### Option 2: Windows Batch Script
+For Windows users, simply double-click the **`start.bat`** file located in the root of the repository. This will automatically open two background command prompt windows for the frontend and backend.
 
-From **`RAG/backend`** (with venv activated):
+### Option 3: Manual Startup (Two Terminals)
 
-```powershell
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
-```
+Use **two separate terminals**: one for the backend API, and one for the frontend UI.
 
-Default API URL: **`http://localhost:8001`**
+#### Terminal A — Backend
 
-### Terminal B — Frontend
-
-From **`RAG/frontend`**:
-
-**Windows (PowerShell)** — point the UI at the API:
-
-```powershell
-$env:VITE_API_BASE="http://localhost:8001"
-npm run dev -- --host 0.0.0.0 --port 5173
-```
-
-**macOS / Linux**
+Open a terminal, navigate into the **`backend`** folder, ensure your virtual environment is activated, and start the server:
 
 ```bash
-VITE_API_BASE=http://localhost:8001 npm run dev -- --host 0.0.0.0 --port 5173
+cd backend
+python -m uvicorn app.main:app --reload --port 8000
 ```
 
-Open **`http://localhost:5173`** in the browser.
+> The API will start on **`http://localhost:8000`**
 
-> If you omit `VITE_API_BASE`, the frontend defaults to `http://localhost:8001` (see `frontend/src/api.js`).
+#### Terminal B — Frontend
+
+Open a new terminal, navigate into the **`frontend`** folder, and start the UI:
+
+```bash
+cd frontend
+npm run dev
+```
+
+> The UI will start on **`http://localhost:5173`**
+
+Open **`http://localhost:5173`** in your browser to start using the app!
 
 ### Production Build (Frontend Only)
 

@@ -159,4 +159,5 @@ def process_pdf(job_id: str, saved_path: Path, doc_id: str) -> None:
 
         _update_job(job_id, state="indexed", message=f"Done! {indexed_count} chunks indexed.", progress=100)
     except Exception as exc:  # noqa: BLE001
-        _update_job(job_id, state="failed", message=f"Ingestion failed: {exc}", progress=0)
+        import traceback
+        _update_job(job_id, state="failed", message=f"Ingestion failed: {exc}\n{traceback.format_exc()}", progress=0)

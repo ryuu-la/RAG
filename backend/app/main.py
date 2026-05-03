@@ -55,8 +55,28 @@ def on_startup() -> None:
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict[str, str | bool]:
+    return {
+        "status": "ok",
+        "api_key_configured": settings.has_api_key,
+    }
+
+
+@app.get("/api/setup/status")
+def setup_status():
+    """Quick diagnostics for first-time setup."""
+    return {
+        "api_key_set": settings.has_api_key,
+        "default_model": settings.default_model,
+        "embedding_model": settings.embedding_model,
+        "documents_indexed": len(store.documents),
+        "help": (
+            "Add GOOGLE_API_KEY to your .env file. "
+            "Get a free key at https://aistudio.google.com/apikey"
+            if not settings.has_api_key
+            else "All good! Your setup is ready."
+        ),
+    }
 
 
 @app.get("/api/models")
@@ -73,9 +93,10 @@ async def upload_file(file: UploadFile = File(...)) -> dict[str, str]:
         raise HTTPException(status_code=400, detail="Only PDF upload is supported currently.")
 
     doc_id = str(uuid.uuid4())
-    job_id = create_ingest_job(file.filename)
+    safe_filename = Path(file.filename).name
+    job_id = create_ingest_job(safe_filename)
 
-    saved_path = settings.upload_path / f"{doc_id}_{file.filename}"
+    saved_path = settings.upload_path / f"{doc_id}_{safe_filename}"
     content = await file.read()
     saved_path.write_bytes(content)
 

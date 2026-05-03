@@ -22,12 +22,14 @@ function newSession() {
 const DEFAULT_MODELS = [
   { id: "gemma-4-31b-it", label: "Gemma 4 31B", provider: "google" },
   { id: "gemini-3.1-flash-lite-preview", label: "Gemini 3.1 Flash Lite", provider: "google", grounding: true },
+  { id: "openai/gpt-oss-120b:free", label: "GPT OSS 120B (Free)", provider: "openrouter" },
 ];
 
 const TOOL_LABELS = {
   search_documents: { icon: "🔍", label: "Searching documents" },
   lookup_document: { icon: "📄", label: "Looking up document" },
   web_search: { icon: "🌐", label: "Searching the web" },
+  image_search: { icon: "📷", label: "Searching for images" },
   read_url: { icon: "📖", label: "Reading webpage" },
   export_csv: { icon: "📊", label: "Exporting CSV" },
   export_pdf: { icon: "📑", label: "Exporting PDF" },
@@ -134,16 +136,40 @@ function isCsvHeuristic(code) {
   return code.includes(",") && code.split("\n").length >= 2 && code.split("\n")[0].split(",").length >= 2;
 }
 
+// Image Lightbox (click-to-zoom overlay)
+function ImageLightbox({ src, alt, onClose }) {
+  if (!src) return null;
+  return (
+    <div className="image-lightbox-backdrop" onClick={onClose}>
+      <img src={src} alt={alt || "Image"} className="image-lightbox-img" onClick={e => e.stopPropagation()} />
+      <button className="image-lightbox-close" onClick={onClose}>✕</button>
+    </div>
+  );
+}
+
 // Markdown renderer
 function RenderMarkdown({ text, onPreview, onCsvPreview }) {
+  const [lightboxSrc, setLightboxSrc] = useState(null);
   if (!text) return null;
   const normalized = text.replace(/\]\s*\n\s*\(/g, "](");
 
   return (
     <div className="markdown-body">
+      {lightboxSrc && <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
+          img({ node, src, alt, ...props }) {
+            return (
+              <img
+                src={src}
+                alt={alt || "Image"}
+                className="chat-thumb"
+                onClick={() => setLightboxSrc(src)}
+                loading="lazy"
+              />
+            );
+          },
           a({ node, href, children, ...props }) {
             if (href?.includes("/api/exports/")) {
               let label = children;
@@ -272,6 +298,7 @@ export default function App() {
   const [uploadJob, setUploadJob] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [csvPreviewUrl, setCsvPreviewUrl] = useState(null);
+  const [apiKeyOk, setApiKeyOk] = useState(true);
 
   const ragInputRef = useRef(null);
   const modelInputRef = useRef(null);
@@ -288,7 +315,14 @@ export default function App() {
     return { totalDocs, totalTokens, totalChunks, indexedChunks };
   }, [ragMetrics]);
 
-  useEffect(() => { refreshModelUploads(); fetchModels(); refreshRagMetrics(); }, []);
+  useEffect(() => {
+    refreshModelUploads(); fetchModels(); refreshRagMetrics();
+    // Check if API key is configured
+    fetch((import.meta.env.VITE_API_BASE || "http://localhost:8001") + "/health")
+      .then(r => r.json())
+      .then(data => { if (data.api_key_configured === false) setApiKeyOk(false); })
+      .catch(() => {});
+  }, []);
 
   async function refreshRagMetrics() {
     try { const src = await getSources(); const m = await Promise.all(src.map(async (s) => { try { return await getDocumentMetrics(s.doc_id); } catch { return null; } })); setRagMetrics(m.filter(Boolean)); } catch { }
@@ -428,13 +462,39 @@ export default function App() {
           </div>
         </header>
 
+        {!apiKeyOk && (
+          <div style={{
+            background: 'linear-gradient(135deg, #ff6b3520, #ff4d4d20)',
+            border: '1px solid #ff6b3560',
+            borderRadius: '12px',
+            padding: '14px 20px',
+            margin: '10px 20px 0',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            fontSize: '14px',
+            color: 'var(--text-primary)',
+          }}>
+            <span style={{ fontSize: '20px' }}>⚠️</span>
+            <div>
+              <strong>API Key Not Configured</strong>
+              <div style={{ fontSize: '12px', marginTop: '2px', opacity: 0.8 }}>
+                Add <code style={{ background: 'var(--bg-tertiary)', padding: '1px 5px', borderRadius: '4px' }}>GOOGLE_API_KEY=your_key</code> to
+                your <code style={{ background: 'var(--bg-tertiary)', padding: '1px 5px', borderRadius: '4px' }}>.env</code> file and restart the backend.
+                Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" style={{ color: '#6C8EFF' }}>aistudio.google.com/apikey</a>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="chat-stage">
           {activeSession.messages.length === 0 ? (
             <div className="chat-empty-stage">
               <div className="assistant-logo">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" /></svg>
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" /></svg>
               </div>
               <h2>How can I help you today?</h2>
+              <p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '-10px' }}>Upload a document or start a conversation.</p>
             </div>
           ) : (
             <div className="message-list">
@@ -509,7 +569,6 @@ export default function App() {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" /></svg>
               </button>
             </div>
-            <div className="disclaimer">This UI strictly replicates the clean functionality of modern ChatGPT web.</div>
           </div>
           <input ref={ragInputRef} type="file" accept=".pdf" hidden onChange={(e) => { handleUploadToRag(e.target.files?.[0]); e.target.value = ""; }} />
           <input ref={modelInputRef} type="file" accept=".pdf,.txt,.md" hidden onChange={(e) => { handleUploadToModel(e.target.files?.[0]); e.target.value = ""; }} />

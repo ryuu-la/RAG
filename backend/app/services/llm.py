@@ -45,9 +45,11 @@ def generate_answer(
     context = trim_to_token_budget(context, settings.max_context_tokens)
     context_tokens = estimate_tokens(context)
 
-    if not settings.google_api_key.strip():
+    if not settings.has_api_key:
         return (
-            "Google API key is not configured. Add GOOGLE_API_KEY in .env to enable answer generation.",
+            "⚠ GOOGLE_API_KEY is not set. "
+            "Add it to your .env file (in backend/ or project root). "
+            "Get a free key at https://aistudio.google.com/apikey",
             None,
             context_tokens,
         )

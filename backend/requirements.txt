@@ -1,24 +1,37 @@
+# ── Core Framework ──
 fastapi
 uvicorn[standard]
 python-multipart
 pydantic
 pydantic-settings
 python-dotenv
+
+# ── PDF & Document Processing ──
 pypdf
-tiktoken
-sentence-transformers
-chromadb
-rank-bm25
-google-genai
 pytesseract
 pypdfium2
 Pillow
+
+# ── Embeddings & Vector Store ──
+sentence-transformers
+chromadb
+rank-bm25
 numpy
+
+# ── LLM Providers ──
+google-genai
+langchain-core
+langchain-google-genai
+langchain-openai
+
+# ── Agent Tools ──
+ddgs
+beautifulsoup4
+pandas
+fpdf2
+
+# ── Utilities ──
+tiktoken
 packaging
 protobuf
 httpx
-langchain-core
-langchain-google-genai
-duckduckgo-search
-pandas
-fpdf2

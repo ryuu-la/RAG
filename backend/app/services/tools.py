@@ -29,6 +29,8 @@ def search_documents(query: str) -> str:
     for i, c in enumerate(chunks, 1):
         meta = c.get("metadata") or {}
         src = meta.get("source", "unknown")
+        if "_" in src and len(src.split("_")[0]) >= 32:
+            src = src.split("_", 1)[1]
         pg = meta.get("page", "?")
         txt = (c.get("text") or "")[:600]
         parts.append(f"[{i}] {src} (page {pg}):\n{txt}")
@@ -54,12 +56,13 @@ def lookup_document(document_name: str) -> str:
 
 
 @tool
-def web_search(query: str) -> str:
-    """Search the web for current information. Use for news, facts, current events. You can call this multiple times with different queries."""
+def web_search(query: str, timelimit: str | None = None) -> str:
+    """Search the web for current information. Use for news, facts, current events. You can call this multiple times with different queries.
+    timelimit options: 'd' (past day), 'w' (past week), 'm' (past month), 'y' (past year), or None (all time). Use 'd' or 'w' for latest news/sports."""
     try:
         from ddgs import DDGS
 
-        results = DDGS().text(query, max_results=10)
+        results = DDGS().text(query, max_results=10, timelimit=timelimit)
         if not results:
             return "No web results found. Try different keywords or answer from your knowledge."
         return "\n\n".join(
@@ -96,6 +99,24 @@ def export_csv(title: str, csv_content: str) -> str:
         return f"CSV exported: [Download {fname}](/api/exports/{fname})"
     except Exception as e:
         return f"CSV export failed: {e}"
+
+
+@tool
+def image_search(query: str, max_results: int = 3) -> str:
+    """Search for relevant images on the internet. Use this when a visual aid would significantly improve the explanation or when the user explicitly asks for pictures.
+    Returns markdown-formatted image tags."""
+    try:
+        from ddgs import DDGS
+
+        results = DDGS().images(query, max_results=max_results)
+        if not results:
+            return f"No images found for '{query}'."
+        
+        return " ".join(
+            f"![{r.get('title', 'Image').replace('[', '(').replace(']', ')')}]({r.get('image', '')})" for r in results
+        )
+    except Exception as e:
+        return f"Image search error: {e}"
 
 
 def _sanitize_latin1(text: str) -> str:
@@ -383,11 +404,41 @@ def read_url(url: str) -> str:
             
             # Truncate if too long (e.g., 20000 chars)
             return f"--- Content from {url} ---\n\n" + text[:20000]
+    except urllib.error.HTTPError as e:
+        if e.code in (403, 401):
+            return f"Failed to read {url}: HTTP Error {e.code}. The site blocked access. Rely on web_search snippets instead."
+        return f"Failed to read {url}: HTTP {e.code}"
     except Exception as e:
         return f"Failed to read URL {url}: {e}"
+
+
+@tool
+def get_live_sports_scores() -> str:
+    """Fetch the absolute real-time live cricket scores directly from the live data feed.
+    Use this immediately when the user asks for the score of a currently ongoing match (like IPL)."""
+    try:
+        import urllib.request
+        import xml.etree.ElementTree as ET
+        
+        req = urllib.request.Request('http://static.cricinfo.com/rss/livescores.xml', headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            xml_data = response.read()
+            
+        root = ET.fromstring(xml_data)
+        scores = []
+        for item in root.findall('.//item'):
+            title = item.find('title')
+            if title is not None and title.text:
+                scores.append("- " + title.text.strip())
+                
+        if not scores:
+            return "No live cricket matches found at the moment."
+        return "Live Cricket Scores:\n" + "\n".join(scores)
+    except Exception as e:
+        return f"Failed to fetch live sports scores: {e}"
 
 def get_tools(rag_mode: bool) -> list:
     if rag_mode:
         # Re-order so web_search is first and clearly prioritized
-        return [web_search, read_url, search_documents, lookup_document, export_csv, export_pdf]
-    return [web_search, read_url, export_csv, export_pdf]
+        return [get_live_sports_scores, web_search, image_search, read_url, search_documents, lookup_document, export_csv, export_pdf]
+    return [get_live_sports_scores, web_search, image_search, read_url, export_csv, export_pdf]
