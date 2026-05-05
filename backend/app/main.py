@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import time
+import os
 import uuid
+import logging
 import threading
 from pathlib import Path
 
@@ -142,10 +144,9 @@ def delete_document(doc_id: str) -> dict[str, str | int]:
     path = doc.get("path")
     if path:
         try:
-            import os
             os.remove(path)
-        except OSError:
-            pass
+        except OSError as e:
+            logging.warning(f"Failed to delete {path}: {e}")
     return {"doc_id": doc_id, "deleted_chunks": deleted_chunks}
 
 
@@ -154,9 +155,6 @@ def delete_document(doc_id: str) -> dict[str, str | int]:
 
 @app.post("/api/model/upload")
 async def model_upload(file: UploadFile = File(...)) -> dict[str, str | int]:
-    allowed = (".pdf", ".txt", ".md")
-    if not file.filename or not file.filename.lower().endswith(allowed):
-        raise HTTPException(status_code=400, detail="Model upload supports PDF, TXT, and MD.")
     content = await file.read()
     return save_model_upload(file.filename, content)
 
@@ -193,12 +191,13 @@ def query(payload: QueryRequest) -> QueryResponse:
     top_k = payload.top_k or settings.top_k
 
     chunks = hybrid_search(payload.question, top_k=top_k)
-    model_file_context = build_model_upload_context(payload.model_upload_ids)
+    model_file_context, media_data = build_model_upload_context(payload.model_upload_ids)
     answer, response_tokens, context_tokens = generate_answer(
         payload.question,
         chunks,
         extra_context=model_file_context,
         model_override=payload.selected_model,
+        media_data=media_data,
     )
 
     query_id = str(uuid.uuid4())
@@ -225,7 +224,7 @@ def query(payload: QueryRequest) -> QueryResponse:
 
 @app.post("/api/query/stream")
 async def query_stream(payload: QueryRequest):
-    model_file_context = build_model_upload_context(payload.model_upload_ids)
+    model_file_context, media_data = build_model_upload_context(payload.model_upload_ids)
 
     async def event_gen():
         history_dicts = None
@@ -238,6 +237,7 @@ async def query_stream(payload: QueryRequest):
             model_name=payload.selected_model,
             extra_context=model_file_context,
             history=history_dicts,
+            media_data=media_data,
         ):
             yield event
 

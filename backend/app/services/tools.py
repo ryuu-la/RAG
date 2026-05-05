@@ -437,8 +437,64 @@ def get_live_sports_scores() -> str:
     except Exception as e:
         return f"Failed to fetch live sports scores: {e}"
 
+
+@tool
+def generate_mindmap(title: str, markdown_content: str) -> str:
+    """Generate an interactive mind map visualization to display in the chat UI.
+
+    WHEN TO USE: When the user asks for a mind map, concept map, knowledge map,
+    or visual overview of their documents or any topic.
+
+    BEFORE calling this tool, you MUST first call search_documents multiple times
+    with different queries to gather comprehensive content from indexed documents.
+
+    MARKDOWN FORMAT — use headings and bullets to create a deep hierarchy:
+      # Central Topic (root node)
+      ## Major Branch 1
+      ### Sub-branch 1a
+      - Leaf detail
+      - Another leaf
+        - Even deeper detail
+      ### Sub-branch 1b
+      - Leaf detail
+      ## Major Branch 2
+      ### Sub-branch 2a
+      - Leaf detail
+
+    RULES:
+    - Go DEEP: at least 3-4 levels of hierarchy.
+    - Cover the ENTIRE document, not just highlights.
+    - Use # for the central topic (only ONE root).
+    - Use ## for major branches (chapters/sections).
+    - Use ### for sub-branches (subsections).
+    - Use - bullets for leaf details, facts, terms.
+    - Use indented bullets (  - ) for even deeper details.
+    - Keep node text SHORT (3-8 words per node for readability).
+    - Include specific terms, numbers, and key facts as leaves.
+    - Do NOT use **bold** or *italic* — plain text only.
+    - Do NOT include code blocks or links.
+
+    Args:
+        title: The mind map title (shown in the header).
+        markdown_content: Hierarchical markdown content for the mind map.
+
+    Returns:
+        JSON string with mind map data for the frontend to render.
+    """
+    # Count approximate source references
+    import re
+    heading_count = len(re.findall(r'^##\s', markdown_content, re.MULTILINE))
+    leaf_count = len(re.findall(r'^\s*-\s', markdown_content, re.MULTILINE))
+
+    return json.dumps({
+        "title": title,
+        "markdown": markdown_content,
+        "source_count": heading_count,
+        "node_count": heading_count + leaf_count,
+    })
+
+
 def get_tools(rag_mode: bool) -> list:
     if rag_mode:
-        # Re-order so web_search is first and clearly prioritized
-        return [get_live_sports_scores, web_search, image_search, read_url, search_documents, lookup_document, export_csv, export_pdf]
-    return [get_live_sports_scores, web_search, image_search, read_url, export_csv, export_pdf]
+        return [get_live_sports_scores, web_search, image_search, read_url, search_documents, lookup_document, export_csv, export_pdf, generate_mindmap]
+    return [get_live_sports_scores, web_search, image_search, read_url, export_csv, export_pdf, generate_mindmap]

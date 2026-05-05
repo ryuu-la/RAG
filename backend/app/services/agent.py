@@ -181,89 +181,91 @@ Llama 4,Open Source,91.0,2026,"Free, open weights"
 - Use consistent formatting in each column.
 - Quote any values containing commas.
 - Include enough rows to be useful.
+
+### SKILL: generate_mindmap(title, markdown_content)
+Purpose: Generate an interactive mind map visualization displayed in the chat UI.
+When to use: When the user asks for a "mind map", "concept map", "knowledge map", or "visual overview" of their documents.
+Strategy:
+- FIRST, call `search_documents` MULTIPLE TIMES (3-5 calls) with different queries to gather comprehensive content covering ALL major topics in the document(s).
+- Synthesize ALL gathered information into a DEEP hierarchical markdown structure.
+- Use `#` for the single root/central topic.
+- Use `##` for major branches (like chapters or main sections).
+- Use `###` for sub-branches (subsections or key concepts).
+- Use `- ` bullets for leaf nodes (specific facts, terms, definitions).
+- Use `  - ` indented bullets for even deeper details.
+- Go AT LEAST 3-4 levels deep to cover the FULL document content.
+- Keep each node label SHORT: 3-8 words max for readability.
+- Include specific facts, numbers, terms, and definitions as leaf nodes.
+- Do NOT use bold/italic/links/code blocks in the markdown — plain text only.
+- After calling generate_mindmap, write a brief text summary of the mind map for the user.
 """
 
 RAG_SYSTEM_TEMPLATE = """\
-You are RAG Studio, an advanced agentic AI assistant with tool access.
+You are the MAIN LLM of the RAG Studio AI system. You are the ONLY entity with the power to reason and think.
 
-## DYNAMIC SEARCH POLICY (CRITICAL - FOLLOW EXACTLY)
+## ARCHITECTURE & SCRATCH PAD PROTOCOL
+1. **User Query:** The user sends you a query.
+2. **Breakdown & Assignment:** You MUST break down the query in your `<think>` block and assign roles to your completely mindless sub-agents (your tools). 
+3. **Agent Execution:** The agents (tools like web_search, search_documents) have no ability to think. They just execute your precise instructions and return raw data.
+4. **The Scratch Pad:** The message history / tool returns act as your INTERNAL SCRATCH PAD. It is a meeting place where agents paste their fetched information. This scratch pad is NOT displayed to the user.
+5. **Final Synthesis:** Once all agents have placed their data in the scratch pad, YOU evaluate everything and generate the final polished content for the UI.
 
-You MUST decide which search tool to use based on the user's query:
+FORMAT YOUR REASONING EXACTLY LIKE THIS:
+<think>
+Thinking Process:
+1. Analyze Request: [What is the user asking?]
+2. Agent Assignment: [Which agents (tools) do I invoke concurrently? e.g. Document Agent for index, Web Agent for live data]
+3. Expected Scratch Pad Data: [What do I expect them to bring back?]
+4. Synthesis Strategy: [How will I combine the scratch pad data once they return it?]
+</think>
+[Once the scratch pad is full of agent data, write your final response to the user here]
 
-### USE `search_documents` (Index/RAG Search) ONLY WHEN:
-The user's query contains ANY of these explicit keywords or phrases:
-- "index", "from index", "indexed", "from my index"
-- "document", "documents", "my documents", "uploaded"
-- "my files", "my PDF", "the PDF", "the report"
-- "RAG", "search my files", "in my documents"
-- Any reference to a specific uploaded filename
+## AGENT (TOOL) DELEGATION POLICY
 
-Examples that trigger index search:
-- "search about langchain from index" -> use search_documents
-- "what does my document say about X" -> use search_documents
-- "find in my uploaded files" -> use search_documents
+You orchestrate these mindless agents by calling their respective tools. You should call multiple tools concurrently for parallel execution.
 
-### USE `web_search` (DuckDuckGo) FOR EVERYTHING ELSE (DEFAULT):
-If the user does NOT mention index, documents, uploaded files, or RAG,
-ALWAYS default to `web_search` for live internet results.
+### Document Agent (`search_documents`)
+- **When to assign:** User mentions "index", "document", "uploaded", "my files", "RAG", or a specific filename. Provide exact citations [1], [2].
 
-Examples that trigger web search:
-- "what is langchain" -> use web_search
-- "latest AI news" -> use web_search
-- "explain transformers" -> use web_search
-- "search about langchain" (no mention of index) -> use web_search
-
-### FALLBACK:
-If `search_documents` returns nothing on a document-specific query,
-fallback to `web_search` if the context allows.
+### Web & Vision Agents (`web_search`, `image_search`)
+- **When to assign:** User asks about live data, current events, or visuals not in their personal docs. 
 
 """ + TOOL_SKILLS + """
 
-## AGENTIC BEHAVIOR
-
-1. Decide between `web_search` (default) and `search_documents` (only when explicitly requested) based on the Dynamic Search Policy above.
-2. THINK step by step. Plan what tools you need.
-3. GATHER enough information. Do MULTIPLE searches with different queries if needed.
-4. SYNTHESIZE a thorough, well-structured answer with citations.
-5. When exporting files, write COMPLETE, professionally formatted content.
-6. If a tool returns an error or empty results, try a DIFFERENT approach/query.
-
-## CITATION & SOURCE RULES
-- When you used `web_search` or `read_url`: cite the actual WEBSITE URLs you visited. These are the real sources.
-- When you used `search_documents`: ALWAYS use simple numeric citations mapped to the search results, formatted exactly like [1] or [2]. NEVER output raw long filenames like [f5116..._langchain.pdf] in your text.
-- NEVER cite PDF filenames when you only did a web search. Only cite the web URLs.
-- NEVER cite web URLs when you only searched the index. Only cite document sources.
-
-## RESPONSE FORMAT
-
-- Use **bold** for emphasis.
-- Include download links naturally when you create export files.
-- NEVER paste raw CSV data or code blocks in your response. ALWAYS use the export_csv tool to create a downloadable file.
-- NEVER paste raw table data as text. Use export_csv for tabular data and export_pdf for reports.
-- Be thorough. Quality and completeness over brevity.
+## FINAL CONTENT RULES (AFTER AGENTS RETURN DATA)
+- Combine all the information from the internal scratch pad smoothly.
+- Embed any images fetched using `image_search` in markdown format directly in the text!
+- NEVER output raw data block tables. Use `export_csv` for data and `export_pdf` for reports.
+- `web_search` / `read_url`: Cite actual website URLs.
+- `search_documents`: Use simple numeric citations `[1]`, `[2]`. NEVER cite raw internal filenames.
 """
 
 CHAT_SYSTEM_TEMPLATE = """\
-You are RAG Studio in chat mode - a capable agentic AI assistant.
+You are the MAIN LLM of the RAG Studio AI system. You are the ONLY entity with the power to reason and think.
+
+## ARCHITECTURE & SCRATCH PAD PROTOCOL
+1. **User Query:** The user sends you a query.
+2. **Breakdown & Assignment:** You MUST break down the query in your `<think>` block and assign roles to your completely mindless sub-agents (your tools). 
+3. **Agent Execution:** The agents (tools like web_search, search_documents) have no ability to think. They just execute your precise instructions and return raw data.
+4. **The Scratch Pad:** The message history / tool returns act as your INTERNAL SCRATCH PAD. It is a meeting place where agents paste their fetched information.
+5. **Final Synthesis:** Once all agents have placed their data in the scratch pad, YOU evaluate everything and generate the final polished content for the UI.
+
+FORMAT YOUR REASONING EXACTLY LIKE THIS:
+<think>
+Thinking Process:
+1. Analyze Request: [What the user is asking, identifying any attached multimodal media]
+2. Agent Assignment: [Which agents (tools) do I invoke concurrently? e.g. Web Agent, Vision Agent]
+3. Expected Scratch Pad Data: [What do I expect the agents to return?]
+4. Synthesis Strategy: [How to construct the final response]
+</think>
+[Once the scratch pad is full of agent data, write your final response here]
 
 """ + TOOL_SKILLS + """
 
-## AGENTIC BEHAVIOR
-
-1. THINK before acting. Plan your approach.
-2. GATHER sufficient information - search MULTIPLE TIMES with different queries if needed.
-3. SYNTHESIZE a thorough, well-structured answer.
-4. When exporting files, write COMPLETE, professionally formatted content.
-5. If a search returns nothing, rephrase and try again before giving up.
-6. Be helpful, accurate, and proactive. Go above and beyond.
-
-## RESPONSE FORMAT
-
-- Use **bold** for emphasis.
-- Include download links naturally when you create export files.
-- NEVER paste raw CSV data or code blocks in your response. ALWAYS use the export_csv tool to create a downloadable file.
-- NEVER paste raw table data as text. Use export_csv for tabular data and export_pdf for reports.
-- Be thorough. Quality and completeness over brevity.
+## FINAL CONTENT RULES
+- Deploy multiple agents via concurrent tool calls for maximum efficiency.
+- Handle multimodal context confidently.
+- Be helpful, deeply analytical, and highly structured in your final output, using the data from the scratch pad.
 """
 
 
@@ -338,6 +340,7 @@ async def run_agent_stream(
     model_name: str | None = None,
     extra_context: str = "",
     history: list[dict] | None = None,
+    media_data: list[str] | None = None,
 ) -> AsyncGenerator[str, None]:
     t0 = time.perf_counter()
     model_id = model_name or settings.default_model
@@ -369,12 +372,18 @@ async def run_agent_stream(
             elif role == "assistant":
                 messages.append(AIMessage(content=content))
 
-    messages.append(HumanMessage(content=question))
+    content_parts = [{"type": "text", "text": question}]
+    if media_data:
+        for md in media_data:
+            content_parts.append({"type": "image_url", "image_url": {"url": md}})
+
+    messages.append(HumanMessage(content=content_parts))
     web_citations: list[dict] = []
     doc_citations: list[dict] = []
     # Use a set to prevent duplicate citations
     seen_sources = set()
     export_links: list[dict] = []
+    mindmap_events: list[dict] = []
     # Track which search tools were actually used
     used_web_search = False
     used_search_documents = False
@@ -416,24 +425,52 @@ async def run_agent_stream(
 
         messages.append(resp)
 
-        for tc in resp.tool_calls:
+
+        import asyncio
+
+        # Execute parallel tools
+        async def execute_tool(tc):
             name = tc["name"]
             args = tc["args"]
             tid = tc["id"]
-
-            yield _sse("step", {
+            
+            yield_events = []
+            yield_events.append(_sse("step", {
                 "type": "tool_start",
                 "tool": name,
                 "input": json.dumps(args, ensure_ascii=False)[:300],
-            })
+            }))
 
             try:
                 if name in tools_map:
-                    result = tools_map[name].invoke(args)
+                    # Run sync tool in thread for parallel execution if necessary
+                    # LangChain's ainvoke works directly as well
+                    result = await tools_map[name].ainvoke(args)
                 else:
                     result = f"Unknown tool: {name}"
             except Exception as exc:
                 result = f"Tool error: {exc}"
+
+            yield_events.append(_sse("step", {
+                "type": "tool_end",
+                "tool": name,
+                "output": str(result)[:500],
+            }))
+            
+            return {"name": name, "result": result, "tid": tid, "args": args, "events": yield_events}
+
+        tool_tasks = [execute_tool(tc) for tc in resp.tool_calls]
+        tool_results = await asyncio.gather(*tool_tasks)
+
+        for tr in tool_results:
+            name = tr["name"]
+            result = tr["result"]
+            tid = tr["tid"]
+            args = tr["args"]
+
+            # Stream out the events generated during the async execution
+            for evt in tr["events"]:
+                yield evt
 
             if name == "search_documents":
                 used_search_documents = True
@@ -481,11 +518,13 @@ async def run_agent_stream(
                 for m in re.finditer(r"\[([^\]]+)\]\((/api/exports/[^)]+)\)", str(result)):
                     export_links.append({"label": m.group(1), "href": m.group(2)})
 
-            yield _sse("step", {
-                "type": "tool_end",
-                "tool": name,
-                "output": str(result)[:500],
-            })
+            if name == "generate_mindmap":
+                try:
+                    mindmap_data = json.loads(str(result))
+                    mindmap_events.append(mindmap_data)
+                    yield _sse("mindmap", mindmap_data)
+                except Exception:
+                    pass
 
             messages.append(ToolMessage(content=str(result), tool_call_id=tid))
 

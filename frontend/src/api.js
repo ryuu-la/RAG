@@ -70,7 +70,7 @@ export function getExportUrl(path) {
   return `${API_BASE}/${path}`;
 }
 
-export async function streamQuery(payload, { onStep, onToken, onExports, onDone, onError }) {
+export async function streamQuery(payload, { onStep, onToken, onExports, onMindmap, onDone, onError }) {
   const res = await fetch(`${API_BASE}/api/query/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -116,6 +116,9 @@ export async function streamQuery(payload, { onStep, onToken, onExports, onDone,
             break;
           case "exports":
             onExports?.(data);
+            break;
+          case "mindmap":
+            onMindmap?.(data);
             break;
           case "done":
             onDone?.(data);

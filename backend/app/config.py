@@ -26,6 +26,7 @@ class Settings(BaseSettings):
         env_file=str(_ENV_PATH),
         env_file_encoding="utf-8",
         env_ignore_empty=True,
+        extra="ignore",
     )
 
     google_api_key: str = ""

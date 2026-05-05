@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import uuid
+import base64
+import mimetypes
 from pathlib import Path
 
 from pypdf import PdfReader
@@ -16,9 +18,9 @@ def _extract_text(path: Path) -> str:
         reader = PdfReader(str(path))
         pages = [(page.extract_text() or "") for page in reader.pages]
         return "\n".join(pages).strip()
-    if suffix in {".txt", ".md"}:
+    if suffix in {".txt", ".md", ".csv"}:
         return path.read_text(encoding="utf-8", errors="ignore").strip()
-    raise ValueError("Unsupported file for direct model upload. Use PDF, TXT, or MD.")
+    return f"[Attached Media File: {path.name}]"
 
 
 def save_model_upload(filename: str, content: bytes) -> dict[str, str | int]:
@@ -28,6 +30,14 @@ def save_model_upload(filename: str, content: bytes) -> dict[str, str | int]:
     path = model_upload_dir / f"{upload_id}_{filename}"
     path.write_bytes(content)
 
+    suffix = path.suffix.lower()
+    encoded_media = None
+    if suffix not in {".pdf", ".txt", ".md", ".csv"}:
+        mime_type, _ = mimetypes.guess_type(path)
+        mime_type = mime_type or "application/octet-stream"
+        encoded_data = base64.b64encode(content).decode("utf-8")
+        encoded_media = f"data:{mime_type};base64,{encoded_data}"
+
     text = _extract_text(path)
     tokens = estimate_tokens(text)
     store.model_uploads[upload_id] = {
@@ -35,18 +45,22 @@ def save_model_upload(filename: str, content: bytes) -> dict[str, str | int]:
         "filename": filename,
         "path": str(path),
         "text": text,
+        "encoded_media": encoded_media,
         "estimated_tokens": tokens,
     }
     return {"upload_id": upload_id, "estimated_tokens": tokens}
 
 
-def build_model_upload_context(upload_ids: list[str] | None) -> str:
+def build_model_upload_context(upload_ids: list[str] | None) -> tuple[str, list[str]]:
     if not upload_ids:
-        return ""
-    blocks: list[str] = []
+        return "", []
+    text_blocks: list[str] = []
+    media_data: list[str] = []
     for uid in upload_ids:
         item = store.model_uploads.get(uid)
         if not item:
             continue
-        blocks.append(f"[MODEL_FILE] filename={item['filename']}\n{item['text']}")
-    return "\n\n".join(blocks)
+        if item.get("encoded_media"):
+            media_data.append(item["encoded_media"])
+        text_blocks.append(f"[MODEL_FILE] filename={item['filename']}\n{item['text']}")
+    return "\n\n".join(text_blocks), media_data

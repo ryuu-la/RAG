@@ -24,7 +24,8 @@ Local-first **Agentic Retrieval-Augmented Generation (RAG)** application: upload
 
 ## Features
 
-- **Agentic RAG** — AI agent with tool access: document search, web search, URL reading, PDF/CSV export
+- **Agentic RAG** — AI agent with tool access: document search, web search, URL reading, PDF/CSV export, mind maps
+- **Interactive Mind Maps** — generate deep hierarchical mind maps from documents with collapsible nodes, NotebookLM-style viewer, and SVG export
 - **Multi-turn conversation memory** — model remembers previous messages within a session
 - **Hybrid retrieval** — dense semantic search + BM25 keyword search for best results
 - **PDF ingestion** with token/chunk metrics and OCR fallback (Tesseract)
@@ -40,8 +41,8 @@ Local-first **Agentic Retrieval-Augmented Generation (RAG)** application: upload
 
 | Layer | Stack |
 |--------|--------|
-| Backend | Python 3.11+, FastAPI, ChromaDB, sentence-transformers, rank-bm25, LangChain |
-| Frontend | React 18, Vite 5, react-markdown |
+| Backend | Python 3.11+, FastAPI, ChromaDB, sentence-transformers, rank-bm25, LangChain, Google GenAI |
+| Frontend | React 18, Vite 5, react-markdown, markmap-lib, markmap-view, KaTeX |
 | LLM | Google Generative AI (`GOOGLE_API_KEY`) — Gemma 4 31B, Gemini 3.1 Flash Lite |
 | Search | DuckDuckGo (web), Hybrid dense+BM25 (documents) |
 
@@ -53,6 +54,29 @@ Local-first **Agentic Retrieval-Augmented Generation (RAG)** application: upload
 4. **Google API Key** — get one from [Google AI Studio](https://aistudio.google.com/apikey)
 5. **Tesseract OCR** *(optional, for scanned/image-heavy PDFs)*
    - Windows: install [Tesseract](https://github.com/UB-Mannheim/tesseract/wiki) and ensure `tesseract` is on `PATH`.
+
+---
+
+## Backend Requirements (`backend/requirements.txt`)
+
+| Category | Package | Purpose |
+|----------|---------|---------|
+| **Core Framework** | `fastapi`, `uvicorn[standard]`, `python-multipart`, `pydantic`, `pydantic-settings`, `python-dotenv` | REST API server, request parsing, configuration |
+| **PDF & Document Processing** | `pypdf`, `pytesseract`, `pypdfium2`, `Pillow` | PDF text extraction, OCR for scanned PDFs |
+| **Embeddings & Vector Store** | `sentence-transformers`, `chromadb`, `rank-bm25`, `numpy` | Semantic embeddings, vector storage, BM25 keyword search |
+| **LLM Providers** | `google-genai`, `langchain-core`, `langchain-google-genai`, `langchain-openai` | LLM integration, agent framework |
+| **Agent Tools** | `ddgs`, `beautifulsoup4`, `pandas`, `fpdf2` | Web search, HTML parsing, data export, PDF generation |
+| **Utilities** | `tiktoken`, `packaging`, `protobuf`, `httpx` | Token counting, version checks, serialization, HTTP client |
+
+## Frontend Requirements (`frontend/package.json`)
+
+| Category | Package | Purpose |
+|----------|---------|---------|
+| **Core** | `react`, `react-dom` | UI framework |
+| **Build** | `vite`, `@vitejs/plugin-react` | Dev server and bundler |
+| **Markdown** | `react-markdown`, `remark-gfm`, `remark-math`, `rehype-katex`, `katex` | Rich markdown rendering with GFM tables, math equations |
+| **Mind Maps** | `markmap-lib`, `markmap-view` | Interactive hierarchical mind map visualization |
+| **Data** | `papaparse` | CSV parsing for data export |
 
 ---
 
@@ -173,16 +197,17 @@ Static output is in `frontend/dist/`.
 1. **Upload to RAG** — PDF is parsed, chunked, embedded, and stored in Chroma for retrieval.
 2. **Upload to Model** — file is used as direct model context (not indexed in the vector DB).
 3. **Ask questions** in the chat — the agent automatically decides whether to search the web or your indexed documents.
-4. **Multi-turn conversations** — follow-up questions reference previous context within the same session.
-5. **Export results** — ask the agent to generate PDF reports or CSV spreadsheets from its responses.
-6. Open the right **Stats** panel for documents, chunks, and retrieval metrics.
-7. First embedding run downloads **`EMBEDDING_MODEL`** into `backend/data/models/` (can take a few minutes on CPU).
+4. **Generate Mind Maps** — ask _"Create a mind map about [topic/document]"_ to get an interactive, hierarchical visualization.
+5. **Multi-turn conversations** — follow-up questions reference previous context within the same session.
+6. **Export results** — ask the agent to generate PDF reports or CSV spreadsheets from its responses.
+7. Open the right **Stats** panel for documents, chunks, and retrieval metrics.
+8. First embedding run downloads **`EMBEDDING_MODEL`** into `backend/data/models/` (can take a few minutes on CPU).
 
 ---
 
 ## API Overview
 
-Base URL: `http://localhost:8001`
+Base URL: `http://localhost:8000`
 
 | Method | Path | Purpose |
 |--------|------|---------|

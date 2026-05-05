@@ -39,6 +39,7 @@ def generate_answer(
     chunks: list[dict[str, Any]],
     extra_context: str = "",
     model_override: str | None = None,
+    media_data: list[str] | None = None,
 ) -> tuple[str, int | None, int]:
     rag_context = build_context(chunks)
     context = rag_context if not extra_context else f"{rag_context}\n\n{extra_context}"
@@ -70,9 +71,21 @@ def generate_answer(
         client = genai.Client(api_key=settings.google_api_key)
         model_name = model_override or settings.default_model
 
+        contents = [user_prompt]
+        if media_data:
+            # Add basic multimodal support for Google GenAI SDK (assuming base64 data URIs)
+            from google.genai import types
+            import base64
+            for md in media_data:
+                if md.startswith("data:"):
+                    mime_data, b64_data = md.split(";base64,")
+                    mime_type = mime_data.replace("data:", "")
+                    b64_bytes = base64.b64decode(b64_data)
+                    contents.append(types.Part.from_bytes(data=b64_bytes, mime_type=mime_type))
+
         response = client.models.generate_content_stream(
             model=model_name,
-            contents=user_prompt,
+            contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,
                 temperature=0.15,
